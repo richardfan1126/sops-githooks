@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# Get all the filenames of all secret files
+for originFile in $(cat .secret_files); do
+
+	# Generate encrypted filename "<filename>.enc.<extension>"
+    filename="${originFile%%.*}"
+    ext="${originFile#*.}"
+    encryptedFilename="$filename.enc.$ext"
+
+    # Check if original file exists on local
+    if [[ ! -e $originFile ]]; then
+        # If origin file not exist, generate it
+        sops -d --output $originFile $encryptedFilename
+    else
+        # If the origin file already exist on local, check if encrypted file changed in the remote updates
+        fileChanged=$(git diff-tree -r --name-only --no-commit-id ORIG_HEAD HEAD -- $encryptedFilename)
+        if [[ ! -z $fileChanged ]]; then
+            # Print the file diff for user review
+            echo -e "\n"
+            echo "========================================================================="
+            echo "$originFile has been changed. Please review"
+            echo "-------------------------------------------------------------------------"
+            sops -d $encryptedFilename | diff -u --color --ignore-trailing-space $originFile - 
+            echo "========================================================================="
+            echo -e "\n"
+        fi
+    fi
+done

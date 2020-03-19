@@ -1,0 +1,45 @@
+#!/bin/bash
+
+anyFileChanged=0
+
+# Get all the filenames of all secret files
+for originFile in $(cat .secret_files); do
+
+	# Generate encrypted filename "<filename>.enc.<extension>"
+	filename="${originFile%%.*}"
+	ext="${originFile#*.}"
+	encryptedFilename="$filename.enc.$ext"
+
+	# If encrypted file not exist, generate one
+	if [[ ! -e $encryptedFilename ]];then
+		sops -e --output $encryptedFilename $originFile
+		echo "$originFile modified, please commit again"
+		anyFileChanged=1
+		continue
+	fi
+
+	# Get files last update time
+	originModifyTime=$(date -r $originFile +%s)
+	encryptedModifyTime=$(date -r $encryptedFilename +%s)
+
+	# Check if origin file changed after encrypted one
+	if (( $originModifyTime - $encryptedModifyTime > 0 ));then
+		# Check if file content actually changed
+		sops -d $encryptedFilename | diff --ignore-trailing-space $originFile - &>/dev/null
+		
+		# Re-encrypt the file and alert user to add the encrypted files and re-commit
+		if [[ $? -ne 0 ]]; then
+			sops -e --output $encryptedFilename $originFile
+			echo "$originFile modified, please commit again"
+			anyFileChanged=1
+		else
+			# Modify last update time so that later commit won't check the file again
+			touch $encryptedFilename
+		fi
+	fi
+done
+
+# There is file changes, interrupt the commit
+if [[ $anyFileChanged -eq 1 ]]; then
+	exit 1
+fi
